@@ -15,6 +15,7 @@
     "db:push": "prisma db push",
     "seed": "node prisma/seed.js",
     "db:constraints": "prisma db execute --file prisma/constraints.sql --schema prisma/schema.prisma",
+    "setup": "npm run db:push && npm run db:constraints && npm run seed",
     "seed:reset": "node prisma/seed.js --reset"
   },
   "prisma": {
