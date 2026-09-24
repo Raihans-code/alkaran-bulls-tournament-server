@@ -1,0 +1,334 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  OWNER
+  USER
+}
+
+enum SeasonStatus {
+  UPCOMING
+  REGISTRATION
+  AUCTION
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PlayerCategory {
+  ICON
+  BATSMAN
+  BOWLER
+  ALL_ROUNDER
+  WICKET_KEEPER
+  GENERAL
+}
+
+enum PlayerStatus {
+  AVAILABLE
+  IN_AUCTION
+  SOLD
+  UNSOLD
+  WITHDRAWN
+}
+
+enum AuctionStatus {
+  LIVE
+  SOLD
+  UNSOLD
+  WITHDRAWN
+  CANCELLED
+}
+
+enum MatchStatus {
+  UPCOMING
+  LIVE
+  COMPLETED
+  ABANDONED
+}
+
+enum ResultType {
+  WIN
+  TIE
+  NO_RESULT
+}
+
+enum InningsStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  phone        String?
+  role         Role     @default(USER)
+  isActive     Boolean  @default(true)
+  canScore     Boolean  @default(false) // admin can grant score-entry permission
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  teams     Team[]
+  auditLogs AuditLog[]
+}
+
+model Season {
+  id                        String       @id @default(uuid())
+  name                      String
+  seasonNumber              Int          @unique
+  year                      Int
+  description               String?
+  status                    SeasonStatus @default(UPCOMING)
+  startDate                 DateTime?
+  endDate                   DateTime?
+  maxTeams                  Int          @default(10)
+  maxPlayersPerTeam         Int          @default(8)
+  initialTeamBudget         Int          @default(10000)
+  bidIncrement              Int          @default(100)
+  allowMultipleTeamsPerUser Boolean      @default(false)
+  // Points rules (TournamentSetting): configurable per season
+  winPoints                 Int          @default(2)
+  tiePoints                 Int          @default(1)
+  noResultPoints            Int          @default(1)
+  lossPoints                Int          @default(0)
+  championTeamId            String?
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @updatedAt
+
+  teams     Team[]
+  players   Player[]
+  auctions  Auction[]
+  matches   Match[]
+  standings TeamStanding[]
+  squad     SquadPlayer[]
+}
+
+model Team {
+  id                 String             @id @default(uuid())
+  name               String
+  logo               String?
+  contactInfo        String?
+  ownerId            String
+  seasonId           String
+  purse              Int
+  registrationStatus RegistrationStatus @default(PENDING)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  owner  User   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  squad         SquadPlayer[]
+  bids          AuctionBid[]
+  currentPlayers Player[]     @relation("PlayerCurrentTeam")
+  highestOn     Auction[]     @relation("AuctionHighestTeam")
+  matchesA      Match[]       @relation("MatchTeamA")
+  matchesB      Match[]       @relation("MatchTeamB")
+  matchesWon    Match[]       @relation("MatchWinner")
+  standing      TeamStanding?
+
+  @@unique([seasonId, name])
+  @@index([seasonId, registrationStatus])
+  @@index([ownerId])
+}
+
+model Player {
+  id            String         @id @default(uuid())
+  name          String
+  image         String?
+  phone         String?
+  category      PlayerCategory @default(GENERAL)
+  basePrice     Int
+  status        PlayerStatus   @default(AVAILABLE)
+  seasonId      String
+  currentTeamId String?
+  soldPrice     Int?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  season      Season  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  currentTeam Team?   @relation("PlayerCurrentTeam", fields: [currentTeamId], references: [id], onDelete: SetNull)
+
+  auctions   Auction[]
+  squadEntry SquadPlayer?
+  stats      MatchPlayerStatistic[]
+
+  @@unique([seasonId, name])
+  @@index([seasonId, status])
+}
+
+model Auction {
+  id               String        @id @default(uuid())
+  seasonId         String
+  playerId         String
+  status           AuctionStatus @default(LIVE)
+  basePrice        Int
+  currentBid       Int
+  highestBidTeamId String?
+  version          Int           @default(0)
+  startedAt        DateTime      @default(now())
+  endedAt          DateTime?
+
+  season         Season       @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  player         Player       @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  highestBidTeam Team?        @relation("AuctionHighestTeam", fields: [highestBidTeamId], references: [id], onDelete: SetNull)
+  bids           AuctionBid[]
+
+  @@index([seasonId, status])
+  @@index([playerId])
+}
+
+model AuctionBid {
+  id        String   @id @default(uuid())
+  auctionId String
+  teamId    String
+  amount    Int
+  createdAt DateTime @default(now())
+
+  auction Auction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+  team    Team    @relation(fields: [teamId], references: [id], onDelete: Restrict)
+
+  @@index([auctionId, createdAt])
+}
+
+// A player belongs to exactly one squad per season (playerId unique).
+model SquadPlayer {
+  id        String   @id @default(uuid())
+  seasonId  String
+  teamId    String
+  playerId  String   @unique
+  price     Int
+  createdAt DateTime @default(now())
+
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([teamId])
+  @@index([seasonId])
+}
+
+model Match {
+  id              String      @id @default(uuid())
+  seasonId        String
+  matchNumber     Int
+  teamAId         String
+  teamBId         String
+  venue           String?
+  scheduledAt     DateTime?
+  oversLimit      Int         @default(10)
+  status          MatchStatus @default(UPCOMING)
+  resultType      ResultType?
+  winnerId        String?
+  resultText      String?
+  playerOfMatchId String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  teamA  Team   @relation("MatchTeamA", fields: [teamAId], references: [id], onDelete: Restrict)
+  teamB  Team   @relation("MatchTeamB", fields: [teamBId], references: [id], onDelete: Restrict)
+  winner Team?  @relation("MatchWinner", fields: [winnerId], references: [id], onDelete: SetNull)
+
+  innings MatchScore[]
+  stats   MatchPlayerStatistic[]
+
+  @@unique([seasonId, matchNumber])
+  @@index([seasonId, status])
+}
+
+// One row per innings. Overs are stored as legal balls to keep NRR exact.
+model MatchScore {
+  id            String        @id @default(uuid())
+  matchId       String
+  inningsNumber Int
+  battingTeamId String
+  bowlingTeamId String
+  runs          Int           @default(0)
+  wickets       Int           @default(0)
+  balls         Int           @default(0)
+  extras        Int           @default(0)
+  target        Int?
+  strikerId     String?
+  nonStrikerId  String?
+  bowlerId      String?
+  status        InningsStatus @default(IN_PROGRESS)
+  updatedAt     DateTime      @updatedAt
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, inningsNumber])
+}
+
+model MatchPlayerStatistic {
+  id           String @id @default(uuid())
+  matchId      String
+  playerId     String
+  runs         Int    @default(0)
+  ballsFaced   Int    @default(0)
+  fours        Int    @default(0)
+  sixes        Int    @default(0)
+  wickets      Int    @default(0)
+  ballsBowled  Int    @default(0)
+  runsConceded Int    @default(0)
+
+  match  Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, playerId])
+  @@index([playerId])
+}
+
+model TeamStanding {
+  id           String @id @default(uuid())
+  seasonId     String
+  teamId       String @unique
+  played       Int    @default(0)
+  won          Int    @default(0)
+  lost         Int    @default(0)
+  tied         Int    @default(0)
+  noResult     Int    @default(0)
+  points       Int    @default(0)
+  runsFor      Int    @default(0)
+  ballsFaced   Int    @default(0)
+  runsAgainst  Int    @default(0)
+  ballsBowled  Int    @default(0)
+  netRunRate   Float  @default(0)
+
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([seasonId, points])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  seasonId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([entity, entityId])
+  @@index([seasonId])
+}
