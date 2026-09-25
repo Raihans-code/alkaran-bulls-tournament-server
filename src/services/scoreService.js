@@ -96,6 +96,8 @@ export async function addBall(actor, matchId, inningsNumber, { runs, extraType, 
     const legal = !wideOrNoBall;
     const penalty = wideOrNoBall ? 1 : 0;
     const total = runs + penalty;
+    const batterRuns = ['WD', 'B', 'LB'].includes(extraType) ? 0 : runs;
+    const bowlerRuns = ['B', 'LB'].includes(extraType) ? 0 : total;
     const next = { runs: inn.runs + total, wickets: inn.wickets + (wicket ? 1 : 0), balls: inn.balls + (legal ? 1 : 0), extras: inn.extras + (extraType ? (extraType === 'NB' ? 1 : total) : 0) };
 
     // Strike rotation: odd runs, and end of over.
@@ -115,6 +117,16 @@ export async function addBall(actor, matchId, inningsNumber, { runs, extraType, 
     if (next.wickets >= maxWickets || next.balls >= match.oversLimit * 6 || (inn.target && next.runs >= inn.target)) status = 'COMPLETED';
     const overComplete = legal && next.balls % 6 === 0;
     await tx.matchScore.update({ where: { id: inn.id }, data: { ...next, strikerId, nonStrikerId, dismissedBatterIds, bowlerId: overComplete ? null : inn.bowlerId, lastBowlerId: overComplete ? inn.bowlerId : inn.lastBowlerId, status } });
+    await tx.matchPlayerStatistic.upsert({
+      where: { matchId_playerId: { matchId, playerId: inn.strikerId } },
+      update: { runs: { increment: batterRuns }, ballsFaced: { increment: legal ? 1 : 0 }, fours: { increment: batterRuns === 4 ? 1 : 0 }, sixes: { increment: batterRuns === 6 ? 1 : 0 } },
+      create: { matchId, playerId: inn.strikerId, runs: batterRuns, ballsFaced: legal ? 1 : 0, fours: batterRuns === 4 ? 1 : 0, sixes: batterRuns === 6 ? 1 : 0 },
+    });
+    await tx.matchPlayerStatistic.upsert({
+      where: { matchId_playerId: { matchId, playerId: inn.bowlerId } },
+      update: { wickets: { increment: wicket && dismissal !== 'NON_STRIKER' ? 1 : 0 }, ballsBowled: { increment: legal ? 1 : 0 }, runsConceded: { increment: bowlerRuns } },
+      create: { matchId, playerId: inn.bowlerId, wickets: wicket && dismissal !== 'NON_STRIKER' ? 1 : 0, ballsBowled: legal ? 1 : 0, runsConceded: bowlerRuns },
+    });
     await audit(tx, { userId: actor.id, action: 'SCORE_CHANGED', entity: 'Match', entityId: matchId, seasonId: match.seasonId, metadata: { inningsNumber, ball: { runs, extraType, wicket } } });
   });
   return broadcastMatch(matchId, match.seasonId);
