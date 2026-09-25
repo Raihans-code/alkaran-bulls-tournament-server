@@ -71,7 +71,7 @@ export async function updateInnings(actor, matchId, inningsNumber, body) {
 }
 
 /** Ball-by-ball helper: one legal delivery (or extra) at a time, race-safe via row lock. */
-export async function addBall(actor, matchId, inningsNumber, { runs, extraType, wicket }) {
+export async function addBall(actor, matchId, inningsNumber, { runs, extraType, wicket, dismissal }) {
   const match = await loadMatch(actor, matchId);
   const maxWickets = match.season.maxPlayersPerTeam - 1;
   await prisma.$transaction(async (tx) => {
@@ -80,6 +80,8 @@ export async function addBall(actor, matchId, inningsNumber, { runs, extraType, 
     if (!inn) throw notFound('Innings');
     if (inn.status === 'COMPLETED') throw new AppError(409, 'INNINGS_COMPLETED', 'This innings is already completed');
     if (!inn.bowlerId) throw new AppError(409, 'BOWLER_REQUIRED', 'Select a bowler before recording the next ball');
+    if (!inn.strikerId || !inn.nonStrikerId) throw new AppError(409, 'BATTER_REQUIRED', 'Select the replacement batter before recording the next ball');
+    if (wicket && dismissal && dismissal === 'NON_STRIKER' && !inn.nonStrikerId) throw new AppError(409, 'INVALID_DISMISSAL', 'No non-striker is available to dismiss');
 
     const wideOrNoBall = extraType === 'WD' || extraType === 'NB';
     const legal = !wideOrNoBall;
@@ -89,6 +91,10 @@ export async function addBall(actor, matchId, inningsNumber, { runs, extraType, 
 
     // Strike rotation: odd runs, and end of over.
     let { strikerId, nonStrikerId } = inn;
+    if (wicket) {
+      if (dismissal === 'NON_STRIKER') nonStrikerId = null;
+      else strikerId = null;
+    }
     if (strikerId && nonStrikerId) {
       if (runs % 2 === 1 && extraType !== 'WD') [strikerId, nonStrikerId] = [nonStrikerId, strikerId];
       if (legal && next.balls % 6 === 0) [strikerId, nonStrikerId] = [nonStrikerId, strikerId];

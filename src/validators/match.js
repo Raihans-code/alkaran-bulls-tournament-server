@@ -47,6 +47,7 @@ export const ballSchema = z.object({
   runs: z.coerce.number().int().min(0).max(7).default(0),
   extraType: z.enum(['WD', 'NB', 'B', 'LB']).optional().nullable(),
   wicket: z.boolean().default(false),
+  dismissal: z.enum(['STRIKER', 'NON_STRIKER']).optional(),
 });
 
 export const statsSchema = z.object({
