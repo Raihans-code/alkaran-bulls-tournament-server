@@ -53,6 +53,17 @@ export async function updateInnings(actor, matchId, inningsNumber, body) {
     data.balls = balls;
   }
   for (const k of ['extras', 'target', 'strikerId', 'nonStrikerId', 'bowlerId', 'status']) if (body[k] !== undefined) data[k] = body[k];
+  if (existing && body.bowlerId !== undefined) {
+    if (existing.balls % 6 !== 0 && body.bowlerId !== existing.bowlerId) {
+      throw new AppError(409, 'BOWLER_OVER_IN_PROGRESS', 'The current bowler must finish the over before changing bowlers');
+    }
+    if (existing.balls > 0 && existing.balls % 6 === 0 && !body.bowlerId) {
+      throw new AppError(409, 'BOWLER_CHANGE_REQUIRED', 'Select a different bowler for the new over');
+    }
+    if (existing.balls > 0 && existing.balls % 6 === 0 && body.bowlerId === existing.bowlerId) {
+      throw new AppError(409, 'BOWLER_CHANGE_REQUIRED', 'Select a different bowler for the new over');
+    }
+  }
   await assertPlayersInSeason(match.seasonId, [data.strikerId, data.nonStrikerId, data.bowlerId]);
 
   await prisma.matchScore.upsert({
@@ -73,6 +84,8 @@ export async function addBall(actor, matchId, inningsNumber, { runs, extraType, 
     const inn = await tx.matchScore.findUnique({ where: { matchId_inningsNumber: { matchId, inningsNumber } } });
     if (!inn) throw notFound('Innings');
     if (inn.status === 'COMPLETED') throw new AppError(409, 'INNINGS_COMPLETED', 'This innings is already completed');
+    if (!inn.bowlerId) throw new AppError(409, 'BOWLER_REQUIRED', 'Select a new bowler before recording the next ball');
+    if (inn.balls > 0 && inn.balls % 6 === 0) throw new AppError(409, 'BOWLER_CHANGE_REQUIRED', 'Select a different bowler for the new over');
 
     const wideOrNoBall = extraType === 'WD' || extraType === 'NB';
     const legal = !wideOrNoBall;
@@ -88,7 +101,7 @@ export async function addBall(actor, matchId, inningsNumber, { runs, extraType, 
     }
     let status = inn.status;
     if (next.wickets >= maxWickets || next.balls >= match.oversLimit * 6 || (inn.target && next.runs >= inn.target)) status = 'COMPLETED';
-    await tx.matchScore.update({ where: { id: inn.id }, data: { ...next, strikerId, nonStrikerId, status } });
+    await tx.matchScore.update({ where: { id: inn.id }, data: { ...next, strikerId, nonStrikerId, bowlerId: inn.bowlerId, status } });
     await audit(tx, { userId: actor.id, action: 'SCORE_CHANGED', entity: 'Match', entityId: matchId, seasonId: match.seasonId, metadata: { inningsNumber, ball: { runs, extraType, wicket } } });
   });
   return broadcastMatch(matchId, match.seasonId);
