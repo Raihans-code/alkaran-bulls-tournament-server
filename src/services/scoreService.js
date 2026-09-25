@@ -53,6 +53,15 @@ export async function updateInnings(actor, matchId, inningsNumber, body) {
     data.balls = balls;
   }
   for (const k of ['extras', 'target', 'strikerId', 'nonStrikerId', 'bowlerId', 'status']) if (body[k] !== undefined) data[k] = body[k];
+  const dismissedBatterIds = existing?.dismissedBatterIds ?? [];
+  const strikerId = data.strikerId ?? existing?.strikerId;
+  const nonStrikerId = data.nonStrikerId ?? existing?.nonStrikerId;
+  if (strikerId && strikerId === nonStrikerId) {
+    throw badRequest('DUPLICATE_BATTER', 'The striker and non-striker must be different batters');
+  }
+  if ([strikerId, nonStrikerId].some((id) => id && dismissedBatterIds.includes(id))) {
+    throw badRequest('DISMISSED_BATTER', 'A dismissed batter cannot be selected again');
+  }
   if (existing && body.bowlerId !== undefined && existing.balls % 6 !== 0 && body.bowlerId !== existing.bowlerId) {
     throw new AppError(409, 'BOWLER_OVER_IN_PROGRESS', 'The current bowler must finish the over before changing bowlers');
   }
@@ -91,7 +100,10 @@ export async function addBall(actor, matchId, inningsNumber, { runs, extraType, 
 
     // Strike rotation: odd runs, and end of over.
     let { strikerId, nonStrikerId } = inn;
+    const dismissedBatterIds = [...(inn.dismissedBatterIds ?? [])];
     if (wicket) {
+      const dismissedId = dismissal === 'NON_STRIKER' ? nonStrikerId : strikerId;
+      if (dismissedId) dismissedBatterIds.push(dismissedId);
       if (dismissal === 'NON_STRIKER') nonStrikerId = null;
       else strikerId = null;
     }
@@ -102,7 +114,7 @@ export async function addBall(actor, matchId, inningsNumber, { runs, extraType, 
     let status = inn.status;
     if (next.wickets >= maxWickets || next.balls >= match.oversLimit * 6 || (inn.target && next.runs >= inn.target)) status = 'COMPLETED';
     const overComplete = legal && next.balls % 6 === 0;
-    await tx.matchScore.update({ where: { id: inn.id }, data: { ...next, strikerId, nonStrikerId, bowlerId: overComplete ? null : inn.bowlerId, lastBowlerId: overComplete ? inn.bowlerId : inn.lastBowlerId, status } });
+    await tx.matchScore.update({ where: { id: inn.id }, data: { ...next, strikerId, nonStrikerId, dismissedBatterIds, bowlerId: overComplete ? null : inn.bowlerId, lastBowlerId: overComplete ? inn.bowlerId : inn.lastBowlerId, status } });
     await audit(tx, { userId: actor.id, action: 'SCORE_CHANGED', entity: 'Match', entityId: matchId, seasonId: match.seasonId, metadata: { inningsNumber, ball: { runs, extraType, wicket } } });
   });
   return broadcastMatch(matchId, match.seasonId);

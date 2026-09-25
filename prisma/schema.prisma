@@ -270,6 +270,7 @@ model MatchScore {
   nonStrikerId  String?
   bowlerId      String?
   lastBowlerId  String?
+  dismissedBatterIds String[] @default([])
   status        InningsStatus @default(IN_PROGRESS)
   updatedAt     DateTime      @updatedAt
 
