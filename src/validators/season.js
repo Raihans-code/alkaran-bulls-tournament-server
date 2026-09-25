@@ -15,6 +15,7 @@ const base = {
   maxPlayersPerTeam: z.coerce.number().int().min(1).max(30).default(8),
   initialTeamBudget: z.coerce.number().int().min(0).default(10000),
   bidIncrement: z.coerce.number().int().min(1).default(100),
+  bidOptions: z.array(z.coerce.number().int().min(1)).length(4).default([100, 300, 500, 1000]),
   allowMultipleTeamsPerUser: z.boolean().default(false),
   winPoints: z.coerce.number().int().min(0).default(2),
   tiePoints: z.coerce.number().int().min(0).default(1),

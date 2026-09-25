@@ -101,6 +101,7 @@ model Season {
   maxPlayersPerTeam         Int          @default(8)
   initialTeamBudget         Int          @default(10000)
   bidIncrement              Int          @default(100)
+  bidOptions                Int[]        @default([100, 300, 500, 1000])
   allowMultipleTeamsPerUser Boolean      @default(false)
   // Points rules (TournamentSetting): configurable per season
   winPoints                 Int          @default(2)
@@ -134,14 +135,14 @@ model Team {
   owner  User   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
 
-  squad         SquadPlayer[]
-  bids          AuctionBid[]
-  currentPlayers Player[]     @relation("PlayerCurrentTeam")
-  highestOn     Auction[]     @relation("AuctionHighestTeam")
-  matchesA      Match[]       @relation("MatchTeamA")
-  matchesB      Match[]       @relation("MatchTeamB")
-  matchesWon    Match[]       @relation("MatchWinner")
-  standing      TeamStanding?
+  squad          SquadPlayer[]
+  bids           AuctionBid[]
+  currentPlayers Player[]      @relation("PlayerCurrentTeam")
+  highestOn      Auction[]     @relation("AuctionHighestTeam")
+  matchesA       Match[]       @relation("MatchTeamA")
+  matchesB       Match[]       @relation("MatchTeamB")
+  matchesWon     Match[]       @relation("MatchWinner")
+  standing       TeamStanding?
 
   @@unique([seasonId, name])
   @@index([seasonId, registrationStatus])
@@ -162,8 +163,8 @@ model Player {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
-  season      Season  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
-  currentTeam Team?   @relation("PlayerCurrentTeam", fields: [currentTeamId], references: [id], onDelete: SetNull)
+  season      Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  currentTeam Team?  @relation("PlayerCurrentTeam", fields: [currentTeamId], references: [id], onDelete: SetNull)
 
   auctions   Auction[]
   squadEntry SquadPlayer?
@@ -296,20 +297,20 @@ model MatchPlayerStatistic {
 }
 
 model TeamStanding {
-  id           String @id @default(uuid())
-  seasonId     String
-  teamId       String @unique
-  played       Int    @default(0)
-  won          Int    @default(0)
-  lost         Int    @default(0)
-  tied         Int    @default(0)
-  noResult     Int    @default(0)
-  points       Int    @default(0)
-  runsFor      Int    @default(0)
-  ballsFaced   Int    @default(0)
-  runsAgainst  Int    @default(0)
-  ballsBowled  Int    @default(0)
-  netRunRate   Float  @default(0)
+  id          String @id @default(uuid())
+  seasonId    String
+  teamId      String @unique
+  played      Int    @default(0)
+  won         Int    @default(0)
+  lost        Int    @default(0)
+  tied        Int    @default(0)
+  noResult    Int    @default(0)
+  points      Int    @default(0)
+  runsFor     Int    @default(0)
+  ballsFaced  Int    @default(0)
+  runsAgainst Int    @default(0)
+  ballsBowled Int    @default(0)
+  netRunRate  Float  @default(0)
 
   season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
   team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)

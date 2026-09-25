@@ -31,8 +31,9 @@ export async function getAuctionState(seasonId, db = prisma) {
     seasonStatus: season.status,
     isLive: !!live,
     bidIncrement: season.bidIncrement,
+    bidOptions: season.bidOptions?.length === 4 ? season.bidOptions : [season.bidIncrement],
     maxPlayersPerTeam: season.maxPlayersPerTeam,
-    nextBid: live ? live.currentBid + season.bidIncrement : null,
+    nextBid: live ? live.currentBid + Math.min(...(season.bidOptions?.length === 4 ? season.bidOptions : [season.bidIncrement])) : null,
     auction: live && {
       id: live.id,
       version: live.version,
@@ -113,10 +114,12 @@ export async function placeBid(user, { seasonId, amount, teamId }) {
     if (squadCount >= season.maxPlayersPerTeam) throw new AppError(409, 'SQUAD_FULL', `Team squad is already full (${season.maxPlayersPerTeam} players)`);
     if (live.highestBidTeamId === team.id) throw conflict('ALREADY_HIGHEST_BIDDER', 'Your team already holds the highest bid');
 
-    const minimum = live.currentBid + season.bidIncrement;
+    const options = season.bidOptions?.length === 4 ? season.bidOptions : [season.bidIncrement];
+    const minimum = live.currentBid + Math.min(...options);
     if (amount < minimum) throw new AppError(409, 'BID_TOO_LOW', `Bid must be at least ${minimum}`, { minimum, currentBid: live.currentBid });
-    if ((amount - live.basePrice) % season.bidIncrement !== 0) {
-      throw badRequest('INVALID_INCREMENT', `Bids must go up in steps of ${season.bidIncrement}`, { increment: season.bidIncrement });
+    const increment = amount - live.currentBid;
+    if (!options.includes(increment)) {
+      throw badRequest('INVALID_INCREMENT', `Choose one of the configured bid options: ${options.join(', ')}`, { options });
     }
     if (team.purse < amount) throw new AppError(409, 'INSUFFICIENT_PURSE', 'Not enough purse for this bid', { purse: team.purse });
 
