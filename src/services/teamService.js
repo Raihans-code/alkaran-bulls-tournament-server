@@ -126,14 +126,19 @@ export async function setRegistration(actor, id, status) {
   return result;
 }
 
-export async function adjustPurse(actor, id, { purse, reason }) {
+export async function adjustPurse(actor, id, payload) {
   const result = await prisma.$transaction(async (tx) => {
     const team = await tx.team.findUnique({ where: { id } });
     if (!team) throw notFound('Team');
     await lockSeason(tx, team.seasonId);
     const fresh = await tx.team.findUnique({ where: { id } });
-    const updated = await tx.team.update({ where: { id }, data: { purse } });
-    await audit(tx, { userId: actor.id, action: 'PURSE_ADJUSTED', entity: 'Team', entityId: id, seasonId: team.seasonId, metadata: { from: fresh.purse, to: purse, reason } });
+    const hasDelta = Object.prototype.hasOwnProperty.call(payload, 'delta');
+    const nextPurse = hasDelta ? fresh.purse + Number(payload.delta) : Number(payload.purse);
+    if (!Number.isInteger(nextPurse) || nextPurse < 0) {
+      throw new AppError(400, 'INVALID_PURSE', 'Purse must be a non-negative integer');
+    }
+    const updated = await tx.team.update({ where: { id }, data: { purse: nextPurse } });
+    await audit(tx, { userId: actor.id, action: 'PURSE_ADJUSTED', entity: 'Team', entityId: id, seasonId: team.seasonId, metadata: { from: fresh.purse, to: nextPurse, delta: hasDelta ? Number(payload.delta) : undefined, reason: payload.reason } });
     return updated;
   });
   publish(seasonRoom(result.seasonId), 'teams:update', { seasonId: result.seasonId });
