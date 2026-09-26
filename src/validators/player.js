@@ -42,6 +42,11 @@ export const importPlayersSchema = z.object({
     .max(500),
 });
 
+export const assignPlayerSchema = z.object({
+  teamId: z.string().uuid(),
+  price: z.coerce.number().int().min(0),
+});
+
 export const playerListQuery = z.object({
   seasonId: z.string().uuid(),
   status: z.enum(['AVAILABLE', 'IN_AUCTION', 'SOLD', 'UNSOLD', 'WITHDRAWN']).optional(),
