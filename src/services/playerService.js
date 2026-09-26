@@ -67,6 +67,47 @@ export async function deletePlayer(actor, id) {
   await audit(null, { userId: actor.id, action: 'PLAYER_DELETED', entity: 'Player', entityId: id, seasonId: player.seasonId, metadata: { name: player.name } });
 }
 
+export async function assignPlayerToTeam(actor, playerId, { teamId, price }) {
+  const player = await prisma.player.findUnique({ where: { id: playerId }, include: { season: true, squadEntry: true } });
+  if (!player) throw notFound('Player');
+  const team = await prisma.team.findUnique({ where: { id: teamId }, include: { season: true } });
+  if (!team) throw notFound('Team');
+  if (player.seasonId !== team.seasonId) throw new AppError(409, 'TEAM_SEASON_MISMATCH', 'That player and team are in different seasons');
+  assertSeasonWritable(player.season, { actor });
+  if (player.status !== 'AVAILABLE') throw new AppError(409, 'PLAYER_NOT_AVAILABLE', 'Only available players can be assigned directly');
+  if (player.squadEntry) throw new AppError(409, 'PLAYER_ALREADY_ASSIGNED', 'This player is already assigned to a team');
+  const squadCount = await prisma.squadPlayer.count({ where: { teamId: team.id } });
+  if (squadCount >= player.season.maxPlayersPerTeam) throw new AppError(409, 'SQUAD_FULL', `Team squad is already full (${player.season.maxPlayersPerTeam} players)`);
+  if (team.purse < price) throw new AppError(409, 'INSUFFICIENT_PURSE', 'Team does not have enough purse for this assignment', { purse: team.purse, price });
+
+  const result = await prisma.$transaction(async (tx) => {
+    const updated = await tx.team.update({ where: { id: teamId }, data: { purse: { decrement: price } } });
+    const squad = await tx.squadPlayer.create({ data: { seasonId: player.seasonId, teamId, playerId, price } });
+    await tx.player.update({ where: { id: playerId }, data: { status: 'SOLD', currentTeamId: teamId, soldPrice: price } });
+    await audit(tx, { userId: actor.id, action: 'PLAYER_ASSIGNED', entity: 'Player', entityId: playerId, seasonId: player.seasonId, metadata: { team: team.name, teamId, price, player: player.name } });
+    return { team: updated, squad };
+  });
+
+  return { ...result, player: { id: player.id, name: player.name }, teamId, price };
+}
+
+export async function removePlayerFromTeam(actor, playerId) {
+  const player = await prisma.player.findUnique({ where: { id: playerId }, include: { season: true, squadEntry: true } });
+  if (!player) throw notFound('Player');
+  if (!player.squadEntry) throw new AppError(409, 'PLAYER_NOT_ASSIGNED', 'This player is not assigned to a team');
+  assertSeasonWritable(player.season, { actor });
+
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.team.update({ where: { id: player.squadEntry.teamId }, data: { purse: { increment: player.squadEntry.price } } });
+    await tx.squadPlayer.delete({ where: { id: player.squadEntry.id } });
+    await tx.player.update({ where: { id: playerId }, data: { status: 'AVAILABLE', currentTeamId: null, soldPrice: null } });
+    await audit(tx, { userId: actor.id, action: 'PLAYER_REMOVED_FROM_TEAM', entity: 'Player', entityId: playerId, seasonId: player.seasonId, metadata: { teamId: player.squadEntry.teamId, refund: player.squadEntry.price, player: player.name } });
+    return { refund: player.squadEntry.price };
+  });
+
+  return result;
+}
+
 export async function importPlayers(actor, { seasonId, players }) {
   const season = await getSeasonOrThrow(seasonId);
   assertSeasonWritable(season, { actor });
