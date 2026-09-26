@@ -1,0 +1,2 @@
+ALTER TABLE "MatchScore"
+ADD COLUMN IF NOT EXISTS "dismissedBatterIds" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

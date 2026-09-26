@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import { url } from './common.js';
 
-const category = z.enum(['ICON', 'BATSMAN', 'BOWLER', 'ALL_ROUNDER', 'WICKET_KEEPER', 'GENERAL']);
+const category = z.enum(['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','NO_CATEGORY']);
 
 export const createPlayerSchema = z.object({
   seasonId: z.string().uuid(),
   name: z.string().trim().min(2).max(80),
   image: url,
   phone: z.string().trim().max(30).optional().nullable(),
-  category: category.default('GENERAL'),
+  category: category.default('NO_CATEGORY'),
   basePrice: z.coerce.number().int().min(0),
 });
 
@@ -24,10 +24,17 @@ export const importPlayersSchema = z.object({
         category: z
           .string()
           .trim()
-          .transform((v) => v.toUpperCase().replace(/[\s-]+/g, '_'))
+          .transform((v) => {
+            const s = v.toUpperCase().replace(/[\s-]+/g, '_');
+            const map = { ICON: 'A', BATSMAN: 'B', BOWLER: 'C', ALL_ROUNDER: 'D', WICKET_KEEPER: 'E', GENERAL: 'NO_CATEGORY' };
+            if (map[s]) return map[s];
+            if (/^[A-Z]$/.test(s)) return s;
+            if (s === 'NO_CATEGORY') return 'NO_CATEGORY';
+            return 'NO_CATEGORY';
+          })
           .pipe(category)
-          .catch('GENERAL')
-          .default('GENERAL'),
+          .catch('NO_CATEGORY')
+          .default('NO_CATEGORY'),
         phone: z.string().trim().max(30).optional().nullable(),
       }),
     )

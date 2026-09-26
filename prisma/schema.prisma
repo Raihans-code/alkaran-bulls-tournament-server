@@ -29,12 +29,33 @@ enum RegistrationStatus {
 }
 
 enum PlayerCategory {
-  ICON
-  BATSMAN
-  BOWLER
-  ALL_ROUNDER
-  WICKET_KEEPER
-  GENERAL
+  A
+  B
+  C
+  D
+  E
+  F
+  G
+  H
+  I
+  J
+  K
+  L
+  M
+  N
+  O
+  P
+  Q
+  R
+  S
+  T
+  U
+  V
+  W
+  X
+  Y
+  Z
+  NO_CATEGORY
 }
 
 enum PlayerStatus {
@@ -154,7 +175,7 @@ model Player {
   name          String
   image         String?
   phone         String?
-  category      PlayerCategory @default(GENERAL)
+  category      PlayerCategory @default(NO_CATEGORY)
   basePrice     Int
   status        PlayerStatus   @default(AVAILABLE)
   seasonId      String

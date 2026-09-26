@@ -13,7 +13,7 @@ const OWNER_PASSWORD = process.env.OWNER_PASSWORD || 'Owner@12345';
 
 const first = ['Rahim', 'Karim', 'Shakib', 'Tamim', 'Mushfiq', 'Sabbir', 'Mahmud', 'Nasir', 'Imran', 'Fahim', 'Rafi', 'Tanvir', 'Arif', 'Jamal', 'Sohel', 'Rony', 'Habib', 'Mithun', 'Zahid', 'Nayeem', 'Riyad', 'Anik', 'Shuvo', 'Masum'];
 const last = ['Ahmed', 'Hossain', 'Islam', 'Khan', 'Chowdhury', 'Uddin', 'Rahman', 'Sarker', 'Mia', 'Akter', 'Talukder', 'Bhuiyan', 'Sikder', 'Hasan', 'Miah', 'Das', 'Roy', 'Ali', 'Mondol', 'Kabir', 'Sheikh', 'Alam', 'Reza', 'Karim'];
-const categories = ['BATSMAN', 'BOWLER', 'ALL_ROUNDER', 'WICKET_KEEPER', 'GENERAL', 'BATSMAN', 'BOWLER', 'ICON'];
+const categories = ['B','C','D','E','NO_CATEGORY','B','C','A'];
 const prices = [300, 500, 500, 800, 1000, 600, 400, 1500];
 const teamNames = ['Alkaran Warriors', 'Chattogram Challengers', 'Karnaphuli Kings', 'Patenga Panthers', 'Hill Tract Hawks', 'Sitakunda Strikers', 'Bay Blasters', 'Foy\'s Lake Falcons', 'Port City Titans', 'Alkaran Royals'];
 
@@ -105,8 +105,8 @@ async function main() {
   const s3Names = playerNames(24, 11);
   const s3Players = [];
   for (let i = 0; i < 24; i++) {
-    const category = i < 4 ? 'ICON' : categories[i % categories.length];
-    s3Players.push(await prisma.player.create({ data: { name: s3Names[i], seasonId: s3.id, category, basePrice: category === 'ICON' ? 1500 : prices[i % prices.length], phone: `018000000${String(i).padStart(2, '0')}` } }));
+    const category = i < 4 ? 'A' : categories[i % categories.length];
+    s3Players.push(await prisma.player.create({ data: { name: s3Names[i], seasonId: s3.id, category, basePrice: category === 'A' ? 1500 : prices[i % prices.length], phone: `018000000${String(i).padStart(2, '0')}` } }));
   }
   // Two players per team already sold so squad counters and purses look real (max is still 8).
   for (let t = 0; t < 10; t++) {
@@ -138,8 +138,8 @@ async function main() {
   for (let t = 0; t < 10; t++) {
     for (let k = 0; k < 8; k++) {
       const index = t * 8 + k;
-      const category = k === 0 ? 'ICON' : categories[(index + 2) % categories.length];
-      const basePrice = category === 'ICON' ? 1500 : prices[index % prices.length];
+      const category = k === 0 ? 'A' : categories[(index + 2) % categories.length];
+      const basePrice = category === 'A' ? 1500 : prices[index % prices.length];
       const soldPrice = basePrice + 100 * ((index % 4) + 1);
       const player = await prisma.player.create({ data: { name: s4Names[index], seasonId: s4.id, category, basePrice, status: 'SOLD', currentTeamId: s4Teams[t].id, soldPrice, phone: `0190000${String(index).padStart(4, '0')}` } });
       s4Players.push(player);
