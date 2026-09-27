@@ -93,4 +93,19 @@ export async function setStatus(actor, id, { status, championTeamId }) {
   });
 }
 
+export async function deleteSeason(actor, id) {
+  await prisma.$transaction(async (tx) => {
+    await lockSeason(tx, id);
+    const season = await getSeasonOrThrow(id, tx);
+    if (season.status !== 'CANCELLED') {
+      throw new AppError(409, 'SEASON_NOT_CANCELLED', 'Cancel this season before it can be permanently deleted');
+    }
+    await tx.match.deleteMany({ where: { seasonId: id } });
+    await tx.auction.deleteMany({ where: { seasonId: id } });
+    await tx.player.deleteMany({ where: { seasonId: id } });
+    await tx.team.deleteMany({ where: { seasonId: id } });
+    await tx.season.delete({ where: { id } });
+    await audit(tx, { userId: actor.id, action: 'SEASON_DELETED', entity: 'Season', entityId: id, seasonId: id, metadata: { name: season.name, seasonNumber: season.seasonNumber } });
+  });
+}
 

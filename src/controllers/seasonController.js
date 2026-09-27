@@ -6,3 +6,4 @@ export const get = asyncHandler(async (req, res) => ok(res, await seasons.getSea
 export const create = asyncHandler(async (req, res) => ok(res, await seasons.createSeason(req.user, req.body), 201));
 export const update = asyncHandler(async (req, res) => ok(res, await seasons.updateSeason(req.user, req.params.id, req.body)));
 export const setStatus = asyncHandler(async (req, res) => ok(res, await seasons.setStatus(req.user, req.params.id, req.body)));
+export const remove = asyncHandler(async (req, res) => { await seasons.deleteSeason(req.user, req.params.id); ok(res, null); });

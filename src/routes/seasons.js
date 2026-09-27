@@ -11,4 +11,5 @@ r.get('/:id', validate(idParam, 'params'), c.get);
 r.post('/', authenticate, requireAdmin, validate(createSeasonSchema), c.create);
 r.patch('/:id', authenticate, requireAdmin, validate(idParam, 'params'), validate(updateSeasonSchema), c.update);
 r.post('/:id/status', authenticate, requireAdmin, validate(idParam, 'params'), validate(seasonStatusSchema), c.setStatus);
+r.delete('/:id', authenticate, requireAdmin, validate(idParam, 'params'), c.remove);
 export default r;
