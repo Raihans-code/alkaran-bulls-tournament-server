@@ -92,7 +92,8 @@ export async function startAuction(actor, { seasonId, playerId }) {
 }
 
 export async function placeBid(user, { seasonId, amount, teamId }) {
-  if (!['OWNER', 'ADMIN'].includes(user.role)) throw forbidden('Only team owners can place bids', 'OWNER_ROLE_REQUIRED');
+  // Bidding is admin-only: the auctioneer bids on behalf of a team. Team owners watch like any other viewer.
+  if (user.role !== 'ADMIN') throw forbidden('Only the auctioneer can place bids', 'ADMIN_ROLE_REQUIRED');
   const bid = await prisma.$transaction(async (tx) => {
     await lockSeason(tx, seasonId); // serialises concurrent bids: the DB decides who is first
     const season = await tx.season.findUnique({ where: { id: seasonId } });
@@ -100,15 +101,14 @@ export async function placeBid(user, { seasonId, amount, teamId }) {
     if (season.status !== 'AUCTION') throw new AppError(409, 'AUCTION_NOT_LIVE', 'The auction is not open for this season');
     const live = await requireLive(tx, seasonId);
 
-    // Owners may bid only for their own teams; admins may select any approved team.
-    const owned = await tx.team.findMany({ where: { seasonId, ...(user.role === 'ADMIN' ? {} : { ownerId: user.id }), registrationStatus: 'APPROVED' } });
-    if (owned.length === 0) throw forbidden('You need an approved team in this season to bid', 'NO_APPROVED_TEAM');
+    const owned = await tx.team.findMany({ where: { seasonId, registrationStatus: 'APPROVED' } });
+    if (owned.length === 0) throw forbidden('Approve at least one team in this season to bid', 'NO_APPROVED_TEAM');
     let team;
     if (teamId) {
       team = owned.find((t) => t.id === teamId);
-      if (!team) throw forbidden(user.role === 'ADMIN' ? 'That team is not approved for this season' : 'You can only bid for your own team', 'NOT_TEAM_OWNER');
+      if (!team) throw forbidden('That team is not approved for this season', 'NOT_TEAM_OWNER');
     } else if (owned.length === 1) team = owned[0];
-    else throw badRequest('TEAM_REQUIRED', 'Select which of your teams is bidding');
+    else throw badRequest('TEAM_REQUIRED', 'Select which team is bidding');
 
     const squadCount = await tx.squadPlayer.count({ where: { teamId: team.id } });
     if (squadCount >= season.maxPlayersPerTeam) throw new AppError(409, 'SQUAD_FULL', `Team squad is already full (${season.maxPlayersPerTeam} players)`);
@@ -209,5 +209,29 @@ export async function auctionHistory({ seasonId, playerId }) {
       bids: { orderBy: { createdAt: 'asc' }, include: { team: { select: { name: true } } } },
     },
   });
-  return auctions.map((a) => ({ ...a, bids: a.bids.map(bidView) }));
+  const rows = auctions.map((a) => ({ ...a, bids: a.bids.map(bidView) }));
+
+  // A player an admin assigns straight to a squad (no live auction) never gets an Auction
+  // row, so without this they'd be sold but invisible here. Surface them as SOLD too.
+  const coveredPlayerIds = new Set(rows.filter((r) => r.status === 'SOLD').map((r) => r.playerId));
+  const assigned = await prisma.player.findMany({
+    where: { seasonId, status: 'SOLD', ...(playerId && { id: playerId }), id: { notIn: [...coveredPlayerIds] } },
+    select: { id: true, name: true, category: true, image: true, soldPrice: true, updatedAt: true, currentTeam: { select: { id: true, name: true } } },
+  });
+  const assignedRows = assigned.map((p) => ({
+    id: `assigned-${p.id}`,
+    seasonId,
+    playerId: p.id,
+    status: 'SOLD',
+    basePrice: null,
+    currentBid: p.soldPrice,
+    highestBidTeam: p.currentTeam,
+    player: { id: p.id, name: p.name, category: p.category, image: p.image },
+    bids: [],
+    startedAt: p.updatedAt,
+    endedAt: p.updatedAt,
+    assignedDirectly: true,
+  }));
+
+  return [...rows, ...assignedRows].sort((a, b) => new Date(b.endedAt ?? 0) - new Date(a.endedAt ?? 0));
 }
