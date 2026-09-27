@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+import bcrypt from 'bcrypt';
 import { prisma } from '../utils/prisma.js';
 import { AppError, notFound } from '../utils/errors.js';
 import { audit } from '../utils/audit.js';
@@ -48,4 +50,45 @@ export async function updateUser(actor, id, data) {
   const updated = await prisma.user.update({ where: { id }, data });
   await audit(null, { userId: actor.id, action: 'USER_UPDATED', entity: 'User', entityId: id, metadata: data });
   return publicUser(updated);
+}
+
+
+export async function listPasswordResetRequests() {
+  return prisma.passwordResetRequest.findMany({
+    orderBy: { createdAt: 'desc' },
+    include: { user: { select: { id: true, name: true, email: true, phone: true, isActive: true } } },
+  });
+}
+
+export async function approvePasswordReset(actor, requestId) {
+  const request = await prisma.passwordResetRequest.findUnique({ where: { id: requestId }, include: { user: true } });
+  if (!request) throw notFound('Password reset request');
+  if (request.status !== 'PENDING') throw new AppError(409, 'RESET_REQUEST_NOT_PENDING', 'This password recovery request is no longer pending');
+  if (!request.user.isActive) throw new AppError(409, 'USER_INACTIVE', 'This user account is disabled');
+
+  const temporaryPassword = `AB-${crypto.randomBytes(9).toString('base64url')}`;
+  const temporaryPasswordHash = await bcrypt.hash(temporaryPassword, 12);
+
+  await prisma.$transaction([
+    prisma.passwordResetRequest.update({
+      where: { id: requestId },
+      data: { status: 'APPROVED', temporaryPasswordHash, approvedAt: new Date() },
+    }),
+    prisma.user.update({
+      where: { id: request.userId },
+      data: { passwordHash: temporaryPasswordHash, mustChangePassword: true },
+    }),
+  ]);
+
+  await audit(null, { userId: actor.id, action: 'PASSWORD_RESET_APPROVED', entity: 'PasswordResetRequest', entityId: requestId });
+  return { requestId, user: { id: request.user.id, name: request.user.name, email: request.user.email }, temporaryPassword };
+}
+
+export async function rejectPasswordReset(actor, requestId) {
+  const request = await prisma.passwordResetRequest.findUnique({ where: { id: requestId } });
+  if (!request) throw notFound('Password reset request');
+  if (request.status !== 'PENDING') throw new AppError(409, 'RESET_REQUEST_NOT_PENDING', 'This password recovery request is no longer pending');
+  const updated = await prisma.passwordResetRequest.update({ where: { id: requestId }, data: { status: 'REJECTED' } });
+  await audit(null, { userId: actor.id, action: 'PASSWORD_RESET_REJECTED', entity: 'PasswordResetRequest', entityId: requestId });
+  return updated;
 }

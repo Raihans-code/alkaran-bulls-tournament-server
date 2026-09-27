@@ -12,4 +12,7 @@ r.get('/overview', validate(z.object({ seasonId: z.string().uuid().optional() })
 r.get('/audit-logs', validate(auditQuery, 'query'), c.auditLogs);
 r.get('/users', c.users);
 r.patch('/users/:id', validate(idParam, 'params'), validate(updateUserSchema), c.updateUser);
+r.get('/password-reset-requests', c.passwordResetRequests);
+r.patch('/password-reset-requests/:id/approve', validate(idParam, 'params'), c.approvePasswordReset);
+r.patch('/password-reset-requests/:id/reject', validate(idParam, 'params'), c.rejectPasswordReset);
 export default r;

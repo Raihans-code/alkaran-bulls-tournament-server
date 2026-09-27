@@ -28,6 +28,13 @@ enum RegistrationStatus {
   REJECTED
 }
 
+enum PasswordResetStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  USED
+}
+
 enum PlayerCategory {
   A
   B
@@ -102,11 +109,29 @@ model User {
   role         Role     @default(USER)
   isActive     Boolean  @default(true)
   canScore     Boolean  @default(false) // admin can grant score-entry permission
+  mustChangePassword Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   teams     Team[]
   auditLogs AuditLog[]
+  passwordResetRequests PasswordResetRequest[]
+}
+
+model PasswordResetRequest {
+  id                    String             @id @default(uuid())
+  userId                String
+  reason                String?
+  status                PasswordResetStatus @default(PENDING)
+  temporaryPasswordHash String?
+  createdAt             DateTime           @default(now())
+  approvedAt            DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model Season {
