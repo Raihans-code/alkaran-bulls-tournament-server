@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { authenticate, requireOwner } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { bidSchema } from '../validators/auction.js';
 import * as c from '../controllers/auctionController.js';
 
 const r = Router();
-// Bidding is admin-only: the auctioneer bids on behalf of a team. Team owners watch like any other viewer.
-r.use(authenticate, requireAdmin);
+// Owners place their own bids; admins can still bid for any approved team.
+r.use(authenticate, requireOwner);
 r.post('/', validate(bidSchema), c.bid);
 export default r;

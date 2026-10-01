@@ -9,6 +9,19 @@ const TX_OPTS = { maxWait: 5000, timeout: 10000 };
 
 const bidView = (b) => ({ id: b.id, teamId: b.teamId, teamName: b.team?.name, amount: b.amount, createdAt: b.createdAt });
 
+async function assertOwnerCategoryLimit(tx, { seasonId, ownerId, category }) {
+  const existingInCategory = await tx.squadPlayer.count({
+    where: {
+      seasonId,
+      team: { ownerId },
+      player: { category },
+    },
+  });
+  if (existingInCategory > 0) {
+    throw new AppError(409, 'OWNER_CATEGORY_LIMIT', `This owner already has a player from category ${category}`);
+  }
+}
+
 /** Authoritative auction snapshot for a season. Every client renders this and nothing else. */
 export async function getAuctionState(seasonId, db = prisma) {
   const season = await db.season.findUnique({ where: { id: seasonId } });
@@ -92,8 +105,7 @@ export async function startAuction(actor, { seasonId, playerId }) {
 }
 
 export async function placeBid(user, { seasonId, amount, teamId }) {
-  // Bidding is admin-only: the auctioneer bids on behalf of a team. Team owners watch like any other viewer.
-  if (user.role !== 'ADMIN') throw forbidden('Only the auctioneer can place bids', 'ADMIN_ROLE_REQUIRED');
+  if (!['ADMIN', 'OWNER'].includes(user.role)) throw forbidden('Only approved team owners can place bids', 'OWNER_ROLE_REQUIRED');
   const bid = await prisma.$transaction(async (tx) => {
     await lockSeason(tx, seasonId); // serialises concurrent bids: the DB decides who is first
     const season = await tx.season.findUnique({ where: { id: seasonId } });
@@ -101,14 +113,21 @@ export async function placeBid(user, { seasonId, amount, teamId }) {
     if (season.status !== 'AUCTION') throw new AppError(409, 'AUCTION_NOT_LIVE', 'The auction is not open for this season');
     const live = await requireLive(tx, seasonId);
 
-    const owned = await tx.team.findMany({ where: { seasonId, registrationStatus: 'APPROVED' } });
-    if (owned.length === 0) throw forbidden('Approve at least one team in this season to bid', 'NO_APPROVED_TEAM');
+    const eligible = await tx.team.findMany({
+      where: { seasonId, registrationStatus: 'APPROVED', ...(user.role === 'OWNER' ? { ownerId: user.id } : {}) },
+    });
+    if (eligible.length === 0) {
+      if (user.role === 'OWNER') throw forbidden('You do not have an approved team in this season', 'NO_APPROVED_TEAM');
+      throw forbidden('Approve at least one team in this season to bid', 'NO_APPROVED_TEAM');
+    }
     let team;
     if (teamId) {
-      team = owned.find((t) => t.id === teamId);
-      if (!team) throw forbidden('That team is not approved for this season', 'NOT_TEAM_OWNER');
-    } else if (owned.length === 1) team = owned[0];
+      team = eligible.find((t) => t.id === teamId);
+      if (!team) throw forbidden(user.role === 'OWNER' ? 'You can only bid for your own approved teams' : 'That team is not approved for this season', 'NOT_TEAM_OWNER');
+    } else if (eligible.length === 1) team = eligible[0];
     else throw badRequest('TEAM_REQUIRED', 'Select which team is bidding');
+
+    await assertOwnerCategoryLimit(tx, { seasonId, ownerId: team.ownerId, category: live.player.category });
 
     const squadCount = await tx.squadPlayer.count({ where: { teamId: team.id } });
     if (squadCount >= season.maxPlayersPerTeam) throw new AppError(409, 'SQUAD_FULL', `Team squad is already full (${season.maxPlayersPerTeam} players)`);
@@ -140,6 +159,7 @@ export async function markSold(actor, { seasonId }) {
     if (!live.highestBidTeamId) throw badRequest('NO_BIDS', 'Nobody has bid on this player. Mark UNSOLD or WITHDRAW instead');
 
     const team = await tx.team.findUnique({ where: { id: live.highestBidTeamId } });
+    await assertOwnerCategoryLimit(tx, { seasonId, ownerId: team.ownerId, category: live.player.category });
     const squadCount = await tx.squadPlayer.count({ where: { teamId: team.id } });
     if (squadCount >= season.maxPlayersPerTeam) throw new AppError(409, 'SQUAD_FULL', `${team.name} already has a full squad`);
 

@@ -56,7 +56,7 @@ export function initSockets(httpServer) {
     }));
     socket.on('match:leave', ({ matchId } = {}) => uuidOk(matchId) && socket.leave(matchRoom(matchId)));
 
-    // Bidding: the client only sends an intent (season + amount). Identity and team come from the verified JWT.
+    // Bidding: owners bid for their own approved teams, while admins may bid on behalf of any approved team.
     socket.on('auction:bid', guard(async (payload) => {
       if (!user) throw new AppError(401, 'UNAUTHORIZED', 'Sign in to place a bid');
       if (bucket-- <= 0) throw new AppError(429, 'RATE_LIMITED', 'Too many bids, slow down');
